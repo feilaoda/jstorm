@@ -31,6 +31,15 @@
 					<argLine>-Xms1024m -Xmx2048m</argLine>
 				</configuration>
 			</plugin>
+			<plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>1.6</source>
+                    <target>1.6</target>
+                    <encoding>${project.build.sourceEncoding}</encoding>
+                </configuration>
+            </plugin>
 		</plugins>
 	</build>
 
@@ -59,5 +68,6 @@
 		<!-- <dependency> <groupId>com.alibaba.alimonitor</groupId> <artifactId>alimonitor-jmonitor</artifactId> 
 			<version>0.5.3</version> </dependency> -->
 	</dependencies>
+	
 
 </project>

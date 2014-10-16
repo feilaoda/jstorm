@@ -20,14 +20,17 @@ import backtype.storm.topology.TopologyBuilder;
 import backtype.storm.tuple.Fields;
 
 import com.alibaba.jstorm.cluster.StormConfig;
+import com.alibaba.jstorm.kafka.KafkaSpoutConfig;
 import com.alibaba.jstorm.local.LocalCluster;
 import com.alibaba.jstorm.utils.JStormUtils;
 import com.alipay.dw.jstorm.example.sequence.bean.Pair;
 import com.alipay.dw.jstorm.example.sequence.bean.TradeCustomer;
 import com.alipay.dw.jstorm.example.sequence.bolt.MergeRecord;
 import com.alipay.dw.jstorm.example.sequence.bolt.PairCount;
+import com.alipay.dw.jstorm.example.sequence.bolt.PrintBolt;
 import com.alipay.dw.jstorm.example.sequence.bolt.SplitRecord;
 import com.alipay.dw.jstorm.example.sequence.bolt.TotalCount;
+import com.alipay.dw.jstorm.example.sequence.spout.MyKafkaSpout;
 import com.alipay.dw.jstorm.example.sequence.spout.SequenceSpout;
 
 public class SequenceTopology {
@@ -42,48 +45,64 @@ public class SequenceTopology {
 		int bolt_Parallelism_hint = JStormUtils.parseInt(
 				conf.get(TOPOLOGY_BOLT_PARALLELISM_HINT), 2);
 
+//		Properties p = new Properties();
+//        p.setProperty("zookeeper.connect", "127.0.0.1:2181");
+//        p.setProperty("kafka.broker.hosts", "127.0.0.1:9092");
+//        p.setProperty("kafka.topic", "jstorm3");
+//        p.setProperty("kafka.fetch.from.beginning", "false");
+//        p.setProperty("kafka.broker.partitions", "3");
+//        p.setProperty("kafka.fetch.max.bytes", "200");
+//        
+        KafkaSpoutConfig config = new KafkaSpoutConfig();
+        
 		builder.setSpout(SequenceTopologyDef.SEQUENCE_SPOUT_NAME,
-				new SequenceSpout(), spout_Parallelism_hint);
+				new MyKafkaSpout(config), spout_Parallelism_hint);
 
 		boolean isEnableSplit = JStormUtils.parseBoolean(
 				conf.get("enable.split"), false);
 
-		if (isEnableSplit == false) {
-			BoltDeclarer boltDeclarer = builder.setBolt(
-					SequenceTopologyDef.TOTAL_BOLT_NAME, new TotalCount(),
-					bolt_Parallelism_hint);
-
-			// localFirstGrouping is only for jstorm
-			// boltDeclarer.localFirstGrouping(SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
-			boltDeclarer
-					.localOrShuffleGrouping(SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
-		} else {
-
-			builder.setBolt(SequenceTopologyDef.SPLIT_BOLT_NAME,
-					new SplitRecord(), bolt_Parallelism_hint)
-					.localOrShuffleGrouping(
-							SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
-
-			builder.setBolt(SequenceTopologyDef.TRADE_BOLT_NAME,
-					new PairCount(), bolt_Parallelism_hint).shuffleGrouping(
-					SequenceTopologyDef.SPLIT_BOLT_NAME,
-					SequenceTopologyDef.TRADE_STREAM_ID);
-			builder.setBolt(SequenceTopologyDef.CUSTOMER_BOLT_NAME,
-					new PairCount(), bolt_Parallelism_hint).shuffleGrouping(
-					SequenceTopologyDef.SPLIT_BOLT_NAME,
-					SequenceTopologyDef.CUSTOMER_STREAM_ID);
-
-			builder.setBolt(SequenceTopologyDef.MERGE_BOLT_NAME,
-					new MergeRecord(), bolt_Parallelism_hint)
-					.fieldsGrouping(SequenceTopologyDef.TRADE_BOLT_NAME,
-							new Fields("ID"))
-					.fieldsGrouping(SequenceTopologyDef.CUSTOMER_BOLT_NAME,
-							new Fields("ID"));
-
-			builder.setBolt(SequenceTopologyDef.TOTAL_BOLT_NAME,
-					new TotalCount(), bolt_Parallelism_hint).noneGrouping(
-					SequenceTopologyDef.MERGE_BOLT_NAME);
-		}
+		builder.setBolt("kafka-bolt",
+                new PrintBolt(), bolt_Parallelism_hint)
+                .localOrShuffleGrouping(
+                        SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
+		
+//		
+//		if (isEnableSplit == false) {
+//			BoltDeclarer boltDeclarer = builder.setBolt(
+//					SequenceTopologyDef.TOTAL_BOLT_NAME, new TotalCount(),
+//					bolt_Parallelism_hint);
+//
+//			// localFirstGrouping is only for jstorm
+//			// boltDeclarer.localFirstGrouping(SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
+//			boltDeclarer
+//					.localOrShuffleGrouping(SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
+//		} else {
+//
+//			builder.setBolt(SequenceTopologyDef.SPLIT_BOLT_NAME,
+//					new SplitRecord(), bolt_Parallelism_hint)
+//					.localOrShuffleGrouping(
+//							SequenceTopologyDef.SEQUENCE_SPOUT_NAME);
+//
+//			builder.setBolt(SequenceTopologyDef.TRADE_BOLT_NAME,
+//					new PairCount(), bolt_Parallelism_hint).shuffleGrouping(
+//					SequenceTopologyDef.SPLIT_BOLT_NAME,
+//					SequenceTopologyDef.TRADE_STREAM_ID);
+//			builder.setBolt(SequenceTopologyDef.CUSTOMER_BOLT_NAME,
+//					new PairCount(), bolt_Parallelism_hint).shuffleGrouping(
+//					SequenceTopologyDef.SPLIT_BOLT_NAME,
+//					SequenceTopologyDef.CUSTOMER_STREAM_ID);
+//
+//			builder.setBolt(SequenceTopologyDef.MERGE_BOLT_NAME,
+//					new MergeRecord(), bolt_Parallelism_hint)
+//					.fieldsGrouping(SequenceTopologyDef.TRADE_BOLT_NAME,
+//							new Fields("ID"))
+//					.fieldsGrouping(SequenceTopologyDef.CUSTOMER_BOLT_NAME,
+//							new Fields("ID"));
+//
+//			builder.setBolt(SequenceTopologyDef.TOTAL_BOLT_NAME,
+//					new TotalCount(), bolt_Parallelism_hint).noneGrouping(
+//					SequenceTopologyDef.MERGE_BOLT_NAME);
+//		}
 
 		boolean kryoEnable = JStormUtils.parseBoolean(conf.get("kryo.enable"),
 				false);
@@ -123,9 +142,9 @@ public class SequenceTopology {
 		SetBuilder(builder, conf);
 
 		LocalCluster cluster = new LocalCluster();
-		cluster.submitTopology("SplitMerge", conf, builder.createTopology());
+		cluster.submitTopology("JStorm-Kafka", conf, builder.createTopology());
 
-		Thread.sleep(60000);
+		Thread.sleep(600000);
 
 		cluster.shutdown();
 	}

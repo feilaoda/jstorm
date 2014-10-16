@@ -12,6 +12,7 @@
 		<module>jstorm-client-extension</module>
 		<module>jstorm-server</module>
 		<module>jstorm-ui</module>
+		<module>jstorm-kafka</module>
 	</modules>
 	
 	<repositories>

@@ -22,6 +22,11 @@ import kafka.javaapi.OffsetRequest;
 import kafka.javaapi.consumer.SimpleConsumer;
 import kafka.javaapi.message.ByteBufferMessageSet;
 
+/**
+ * 
+ * @author feilaoda
+ *
+ */
 public class MessageConsumer {
 	
 	private static Logger LOG = Logger.getLogger(MessageConsumer.class);
@@ -33,13 +38,13 @@ public class MessageConsumer {
 	
 
     private KafkaSpoutConfig config;
-	private KafkaBroker broker;
+	private Host broker;
 	
 	
 	private Set<Partition> partitions;
 	
 
-	public MessageConsumer(KafkaSpoutConfig config, KafkaBroker broker) {
+	public MessageConsumer(KafkaSpoutConfig config, Host broker) {
 		this.config = config;
 		this.broker = broker;
 		partitions = new HashSet<Partition>();

@@ -15,6 +15,7 @@ import backtype.storm.spout.SpoutOutputCollector;
 import backtype.storm.task.TopologyContext;
 import backtype.storm.topology.IRichSpout;
 import backtype.storm.topology.OutputFieldsDeclarer;
+import backtype.storm.tuple.Fields;
 
 public class KafkaSpout implements IRichSpout {
 	/**
@@ -30,6 +31,12 @@ public class KafkaSpout implements IRichSpout {
 	
 	private KafkaSpoutConfig config;
 	
+	private ZkState zkState;
+	
+	public KafkaSpout() {
+	    config = new KafkaSpoutConfig();
+	}
+	
 	public KafkaSpout(KafkaSpoutConfig config) {
 		this.config = config;
 	}
@@ -38,13 +45,15 @@ public class KafkaSpout implements IRichSpout {
 	public void open(Map conf, TopologyContext context, SpoutOutputCollector collector) {
 		// TODO Auto-generated method stub
 		this.collector = collector;
-		coordinator = new PartitionCoordinator(config, context);
+		config.configure(conf);
+		zkState = new ZkState(conf, config);
+		coordinator = new PartitionCoordinator(conf, config, context, zkState);
 	}
 
 	@Override
 	public void close() {
 		// TODO Auto-generated method stub
-
+	    zkState.close();
 	}
 
 	@Override
@@ -97,8 +106,7 @@ public class KafkaSpout implements IRichSpout {
 
 	@Override
 	public void declareOutputFields(OutputFieldsDeclarer declarer) {
-	    MultiScheme scheme = new RawMultiScheme();
-		declarer.declare(scheme.getOutputFields());
+		declarer.declare(new Fields("bytes"));
 	}
 
 	@Override

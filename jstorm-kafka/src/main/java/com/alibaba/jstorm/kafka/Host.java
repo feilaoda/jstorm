@@ -1,16 +1,20 @@
 package com.alibaba.jstorm.kafka;
 
 import java.io.Serializable;
-
-public class KafkaBroker implements Serializable {
+/**
+ * 
+ * @author feilaoda
+ *
+ */
+public class Host implements Serializable {
     private String host;
     private int port;
 
-    public KafkaBroker(String host) {
+    public Host(String host) {
         this(host, 9092);
     }
 
-    public KafkaBroker(String host, int port) {
+    public Host(String host, int port) {
         this.host = host;
         this.port = port;
     }
@@ -39,8 +43,8 @@ public class KafkaBroker implements Serializable {
         if (obj == null || getClass() != obj.getClass()) {
             return false;
         }
-        if (obj instanceof KafkaBroker) {
-            final KafkaBroker other = (KafkaBroker) obj;
+        if (obj instanceof Host) {
+            final Host other = (Host) obj;
             return this.host.equals(other.host) && this.port == other.port;
         } else {
             return false;

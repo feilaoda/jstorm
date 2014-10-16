@@ -6,25 +6,28 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 
+import kafka.utils.Utils;
 import scala.actors.threadpool.Arrays;
 
 import com.alibaba.jstorm.utils.JStormUtils;
 
+import backtype.storm.Config;
 import backtype.storm.spout.MultiScheme;
 import backtype.storm.spout.RawMultiScheme;
 
-/**
- * by fld
- */
+
 public class KafkaSpoutConfig implements Serializable {
 
 	
 	private static final long serialVersionUID = 1L;
 
 	public MultiScheme scheme = new RawMultiScheme();
-	public List<KafkaBroker> hosts;
-	public int partitionsPerBroker;
+	public List<Host> brokers;
+	public int numPartitions;
 	public String topic;
+	public String zkRoot;
+	
+	public List<Host> zkServers;
 	
 	public int fetchMaxBytes = 1024*1024;
 	public int fetchWaitMaxMs = 10000;
@@ -35,59 +38,71 @@ public class KafkaSpoutConfig implements Serializable {
     public String clientId;
     public boolean resetOffsetIfOutOfRange = false;
     
-    public KafkaSpoutConfig(Properties properties) {
-        topic = properties.getProperty("kafka.topic", "jstorm");
-        String hoststrs = properties.getProperty("kafka.broker.hosts", "127.0.0.1:9092");
-        String[] hostarr = hoststrs.split(",");
-        hosts = convertHosts(Arrays.asList(hostarr));
-        partitionsPerBroker = JStormUtils.parseInt(properties.getProperty("kafka.broker.partitions"), 1);
-        fetchMaxBytes = JStormUtils.parseInt(properties.getProperty("kafka.fetch.max.bytes"), 1024*1024);
-        fetchWaitMaxMs = JStormUtils.parseInt(properties.getProperty("kafka.fetch.wait.max.ms"), 10000);
-        socketTimeoutMs = JStormUtils.parseInt(properties.getProperty("kafka.socket.timeout.ms"), 30 * 1000);
-        socketReceiveBufferBytes = JStormUtils.parseInt(properties.getProperty("kafka.socket.receive.buffer.bytes"), 64*1024);
-        fromBeginning = JStormUtils.parseBoolean(properties.getProperty("kafka.fetch.from.beginning"), false);
-        startOffsetTime = JStormUtils.parseInt(properties.getProperty("kafka.start.offset.time"), -1);
-        clientId = properties.getProperty("kafka.client.id", "jstorm");
+    private Properties properties = null;
+    private Map stormConf;
+    
+    public KafkaSpoutConfig() {
     }
     
-//    public KafkaSpoutConfig(Map conf) {
-//        topic = Utils.parseString(conf.get("kafka.topic"), "jstorm");
-//        String hoststrs = Utils.parseString(conf.get("kafka.broker.hosts"), "127.0.0.1:9092");
-//        String[] hostarr = hoststrs.split(",");
-//        hosts = convertHosts(Arrays.asList(hostarr));
-//        partitionsPerBroker = JStormUtils.parseInt(conf.get("kafka.broker.partitions"), 1);
-//        fetchMaxBytes = JStormUtils.parseInt(conf.get("kafka.fetch.max.bytes"), 1024*1024);
-//        fetchWaitMaxMs = JStormUtils.parseInt(conf.get("kafka.fetch.wait.max.ms"), 10000);
-//        socketTimeoutMs = JStormUtils.parseInt(conf.get("kafka.socket.timeout.ms"), 30 * 1000);
-//        socketReceiveBufferBytes = JStormUtils.parseInt(conf.get("kafka.socket.receive.buffer.bytes"), 64*1024);
-//        fromBeginning = JStormUtils.parseBoolean(conf.get("kafka.fetch.from.beginning"), false);
-//        startOffsetTime = JStormUtils.parseInt(conf.get("kafka.start.offset.time"), -1);
-//        clientId = Utils.parseString(conf.get("kafka.client.id"), "jstorm");
-//        
-//    }
+    public KafkaSpoutConfig(Properties properties) {
+        this.properties = properties;
+    }
+    
+    public void configure(Map conf) {
+        this.stormConf = conf;
+        topic = getConfig("kafka.topic", "jstorm");
+        zkRoot = getConfig("kafka.zookeeper.root", "/jstorm");
+        
+        String zkHosts = getConfig("kafka.zookeeper.hosts", "127.0.0.1:2181");
+        zkServers = convertHosts(zkHosts, 2181);
+        String brokerHosts = getConfig("kafka.broker.hosts", "127.0.0.1:9092");
+        brokers = convertHosts(brokerHosts, 9092);
+        
+        numPartitions = JStormUtils.parseInt(getConfig("kafka.broker.partitions"), 1);
+        fetchMaxBytes = JStormUtils.parseInt(getConfig("kafka.fetch.max.bytes"), 1024*1024);
+        fetchWaitMaxMs = JStormUtils.parseInt(getConfig("kafka.fetch.wait.max.ms"), 10000);
+        socketTimeoutMs = JStormUtils.parseInt(getConfig("kafka.socket.timeout.ms"), 30 * 1000);
+        socketReceiveBufferBytes = JStormUtils.parseInt(getConfig("kafka.socket.receive.buffer.bytes"), 64*1024);
+        fromBeginning = JStormUtils.parseBoolean(getConfig("kafka.fetch.from.beginning"), false);
+        startOffsetTime = JStormUtils.parseInt(getConfig("kafka.start.offset.time"), -1);
+        clientId = getConfig("kafka.client.id", "jstorm");
+    }
+    
+    
+      private String getConfig(String key) {
+          return getConfig(key, null);
+      }
+        
+	  private String getConfig(String key, String defaultValue) {
+	      if(properties!=null && properties.containsKey(key)) {
+	          return properties.getProperty(key);
+	      }else if(stormConf.containsKey(key)) {
+	          return String.valueOf(stormConf.get(key));
+	      }else {
+	          return defaultValue;
+	      }
+	  }
 
-	public KafkaSpoutConfig( String topic, List<String> hostList) {
-		hosts = convertHosts(hostList);
-		this.topic = topic;
-	}
-
-	public static List<KafkaBroker> convertHosts(List<String> hostList) {
-		List<KafkaBroker> brokerList = new ArrayList<KafkaBroker>();
-		for (String s : hostList) {
-			KafkaBroker broker;
-			String[] spec = s.split(":");
-			if (spec.length == 1) {
-				broker = new KafkaBroker(spec[0]);
-			} else if (spec.length == 2) {
-				broker = new KafkaBroker(spec[0], Integer.parseInt(spec[1]));
-			} else {
-				throw new IllegalArgumentException("Invalid host specification: " + s);
-			}
-			brokerList.add(broker);
-		}
-		return brokerList;
-	}
-
+	
+	public  List<Host> convertHosts(String hosts, int defaultPort) {
+	    List<Host> hostList = new ArrayList<Host>();
+	    String[] hostArr = hosts.split(",");
+        for (String s : hostArr) {
+            Host host;
+            String[] spec = s.split(":");
+            if (spec.length == 1) {
+                host = new Host(spec[0],defaultPort);
+            } else if (spec.length == 2) {
+                host = new Host(spec[0], JStormUtils.parseInt(spec[1]));
+            } else {
+                throw new IllegalArgumentException("Invalid host specification: " + s);
+            }
+            hostList.add(host);
+        }
+        return hostList;
+    }
+	
+	
 	public MultiScheme getScheme() {
 		return scheme;
 	}
@@ -96,20 +111,20 @@ public class KafkaSpoutConfig implements Serializable {
 		this.scheme = scheme;
 	}
 
-	public List<KafkaBroker> getHosts() {
-		return hosts;
+	public List<Host> getHosts() {
+		return brokers;
 	}
 
-	public void setHosts(List<KafkaBroker> hosts) {
-		this.hosts = hosts;
+	public void setHosts(List<Host> hosts) {
+		this.brokers = hosts;
 	}
 
 	public int getPartitionsPerBroker() {
-		return partitionsPerBroker;
+		return numPartitions;
 	}
 
 	public void setPartitionsPerBroker(int partitionsPerBroker) {
-		this.partitionsPerBroker = partitionsPerBroker;
+		this.numPartitions = partitionsPerBroker;
 	}
 
 	public String getTopic() {

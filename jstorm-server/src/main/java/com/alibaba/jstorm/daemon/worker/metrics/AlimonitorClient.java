@@ -69,17 +69,7 @@ public class AlimonitorClient {
 		return sendRequest(collection_flag, error_message, msg);
 	}
 
-	/**
-	 * 
-	 * @param collection_flag
-	 *            0标识采集正常，非0表示采集错误
-	 * @param error_message
-	 *            采集错误时的描述信息 (default: "")
-	 * @param msg
-	 *            监控项数据{}
-	 * @return 发送是否成功
-	 * @throws Exception
-	 */
+	
 	public boolean sendRequest(int collection_flag, String error_message,
 			Map<String, Object> msg) throws Exception {
 		boolean ret = false;
@@ -87,17 +77,7 @@ public class AlimonitorClient {
 		return ret;
 	}
 
-	/**
-	 * 
-	 * @param collection_flag
-	 *            0标识采集正常，非0表示采集错误
-	 * @param error_message
-	 *            采集错误时的描述信息 (default: "")
-	 * @param msg
-	 *            监控项数据[]
-	 * @return 发送是否成功
-	 * @throws Exception
-	 */
+	
 	public boolean sendRequest(int collection_flag, String error_message,
 			List<Map<String, Object>> msgList) throws Exception {
 		boolean ret = false;

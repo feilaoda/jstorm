@@ -3,19 +3,19 @@ package com.alibaba.jstorm.kafka;
 import java.io.Serializable;
 
 public class Partition  implements Serializable{
-	private KafkaBroker broker;
+	private Host broker;
 	private int partition;
 
-	public Partition(KafkaBroker broker, int partition) {
+	public Partition(Host broker, int partition) {
 		this.broker = broker;
 		this.partition = partition;
 	}
 
-	public KafkaBroker getBroker() {
+	public Host getBroker() {
 		return broker;
 	}
 
-	public void setBroker(KafkaBroker broker) {
+	public void setBroker(Host broker) {
 		this.broker = broker;
 	}
 
