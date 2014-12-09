@@ -5,13 +5,11 @@ import backtype.storm.utils.Utils;
 
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
-import com.netflix.curator.framework.api.ACLPathAndBytesable;
 import com.netflix.curator.framework.api.CreateBuilder;
 import com.netflix.curator.framework.api.ProtectACLCreateModePathAndBytesable;
 import com.netflix.curator.retry.RetryNTimes;
 
 import java.nio.charset.Charset;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 

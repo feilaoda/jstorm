@@ -1,7 +1,8 @@
 package com.alibaba.jstorm.kafka;
 
-import java.io.IOException;
+
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
@@ -11,15 +12,12 @@ import java.util.TreeSet;
 
 import org.apache.log4j.Logger;
 
-import com.esotericsoftware.minlog.Log;
 import com.google.common.collect.ImmutableMap;
 
-import kafka.javaapi.OffsetRequest;
 import kafka.javaapi.message.ByteBufferMessageSet;
 import kafka.message.Message;
 import kafka.message.MessageAndOffset;
 import backtype.storm.Config;
-import backtype.storm.spout.RawMultiScheme;
 import backtype.storm.spout.SpoutOutputCollector;
 import backtype.storm.utils.Utils;
 
@@ -35,8 +33,10 @@ public class PartitionConsumer {
         EMIT_MORE, EMIT_END, EMIT_NONE
     }
 
-    private Partition partition;
-    private MessageConsumer consumer;
+    private int partition;
+    private KafkaConsumer consumer;
+   
+
     private PartitionCoordinator coordinator;
 
     private KafkaSpoutConfig config;
@@ -48,11 +48,11 @@ public class PartitionConsumer {
     private ZkState zkState;
     private Map stormConf;
 
-    public PartitionConsumer(Map conf, MessageConsumer consumer, KafkaSpoutConfig config, Partition partition, ZkState offsetState) {
+    public PartitionConsumer(Map conf, KafkaSpoutConfig config, int partition, ZkState offsetState) {
         this.stormConf = conf;
         this.config = config;
         this.partition = partition;
-        this.consumer = consumer;
+        this.consumer = new KafkaConsumer(config);
         this.zkState = offsetState;
 
         Long jsonOffset = null;
@@ -66,28 +66,25 @@ public class PartitionConsumer {
             LOG.warn("Error reading and/or parsing at ZkNode: " + zkPath(), e);
         }
 
-        
-
-        if (config.fromBeginning) {
-            emittingOffset = -1;
-        } else {
-            if(jsonOffset == null) {
-                lastCommittedOffset = -1;
-             // consumer.getConsumer().getOffsetsBefore(request) getOffsetsBefore(config.topic, partition.getPartition(), config.startOffsetTime,
-                // 1)[0];
-            }else {
-                lastCommittedOffset = jsonOffset;
+        try {
+            if (config.fromBeginning) {
+                emittingOffset = consumer.getOffset(config.topic, partition, config.startOffsetTime);
+            } else {
+                if (jsonOffset == null) {
+                    lastCommittedOffset = consumer.getOffset(config.topic, partition, -1);
+                } else {
+                    lastCommittedOffset = jsonOffset;
+                }
+                emittingOffset = lastCommittedOffset;
             }
-            emittingOffset = lastCommittedOffset;
+        } catch (Exception e) {
+            LOG.error(e.getMessage(), e);
         }
     }
 
     public EmitState emit(SpoutOutputCollector collector) {
         if (emittingMessages.isEmpty()) {
             fillMessages();
-        }
-        if (emittingMessages.isEmpty()) {
-            return EmitState.EMIT_NONE;
         }
 
         while (true) {
@@ -96,62 +93,78 @@ public class PartitionConsumer {
                 return EmitState.EMIT_END;
             }
             Iterable<List<Object>> tups = generateTuples(toEmitMsg.message());
+
             if (tups != null) {
                 for (List<Object> tuple : tups) {
+                    LOG.debug("emit message " + new String(Utils.toByteArray(toEmitMsg.message().payload())));
                     collector.emit(tuple, new KafkaMessageId(partition, toEmitMsg.offset()));
                 }
-                // break;
+                break;
             } else {
                 ack(toEmitMsg.offset());
             }
         }
 
-        // if(!emittingMessages.isEmpty()) {
-        // return EmitState.EMIT_MORE;
-        // }else {
-        // return EmitState.EMIT_END;
-        // }
+        if (emittingMessages.isEmpty()) {
+            return EmitState.EMIT_END;
+        } else {
+            return EmitState.EMIT_MORE;
+        }
     }
 
     private void fillMessages() {
 
         ByteBufferMessageSet msgs;
         try {
-            msgs = consumer.fetchMessages(partition.getPartition(), emittingOffset + 1);
-            LOG.debug("fetch message from offset " + emittingOffset);
+            msgs = consumer.fetchMessages(partition, emittingOffset + 1);
+            
+            if (msgs == null) {
+                LOG.error("fetch null message from offset " + emittingOffset);
+                return;
+            }
+            LOG.info("fetch message from offset " + emittingOffset+", size:"+msgs.sizeInBytes());
             for (MessageAndOffset msg : msgs) {
                 emittingMessages.add(msg);
                 emittingOffset = msg.offset();
                 pendingOffsets.add(emittingOffset);
                 LOG.debug("===== fetched a message: " + msg.message().toString() + " offset:" + msg.offset());
             }
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
+            LOG.error(e.getMessage(),e);
         }
     }
 
     public void commitState() {
-        long lastOffset = 0;
-        if (pendingOffsets.isEmpty()) {
-            lastOffset = emittingOffset;
-        } else {
-            lastOffset = pendingOffsets.first();
-        }
-        if (lastOffset != lastCommittedOffset) {
-            Map<Object, Object> data = new HashMap<Object, Object>();
-            data.put("topology", stormConf.get(Config.TOPOLOGY_NAME));
-            data.put("offset", lastOffset);
-            data.put("partition", partition.getPartition());
-            data.put("broker", ImmutableMap.of("host", partition.getBroker().getHost(), "port", partition.getBroker().getPort()));
-            data.put("topic", config.topic);
-            zkState.writeJSON(zkPath(), data);
-            lastCommittedOffset = lastOffset;
+        try {
+            long lastOffset = 0;
+            if (pendingOffsets.isEmpty() || pendingOffsets.size() <= 0) {
+                lastOffset = emittingOffset;
+            } else {
+                lastOffset = pendingOffsets.first();
+            }
+            if (lastOffset != lastCommittedOffset) {
+                Map<Object, Object> data = new HashMap<Object, Object>();
+                data.put("topology", stormConf.get(Config.TOPOLOGY_NAME));
+                data.put("offset", lastOffset);
+                data.put("partition", partition);
+                data.put("broker", ImmutableMap.of("host", consumer.getLeaderBroker().host(), "port", consumer.getLeaderBroker().port()));
+                data.put("topic", config.topic);
+                zkState.writeJSON(zkPath(), data);
+                lastCommittedOffset = lastOffset;
+            }
+        } catch (Exception e) {
+            LOG.error(e.getMessage(), e);
         }
 
     }
 
     public void ack(long offset) {
-        pendingOffsets.remove(offset);
+        try {
+            pendingOffsets.remove(offset);
+        } catch (Exception e) {
+            LOG.error("offset ack error " + offset);
+        }
     }
 
     public void fail(long offset) {
@@ -160,24 +173,22 @@ public class PartitionConsumer {
 
     public void close() {
         coordinator.removeConsumer(partition);
+        consumer.close();
     }
 
+    @SuppressWarnings("unchecked")
     public Iterable<List<Object>> generateTuples(Message msg) {
         Iterable<List<Object>> tups = null;
         ByteBuffer payload = msg.payload();
         if (payload == null) {
             return null;
         }
-        ByteBuffer key = msg.key();
-        if (key != null) {
-        } else {
-            tups = config.scheme.deserialize(Utils.toByteArray(payload));
-        }
+        tups = Arrays.asList(Utils.tuple(Utils.toByteArray(payload)));
         return tups;
     }
 
     private String zkPath() {
-        return config.zkRoot + "/" + config.topic + "/id_" + config.clientId + "/" + partition.getPartition()+"/offset";
+        return config.zkRoot + "/kafka/offset/topic/" + config.topic + "/" + config.clientId + "/" + partition;
     }
 
     public PartitionCoordinator getCoordinator() {
@@ -188,12 +199,19 @@ public class PartitionConsumer {
         this.coordinator = coordinator;
     }
 
-    public Partition getPartition() {
+    public int getPartition() {
         return partition;
     }
 
-    public void setPartition(Partition partition) {
+    public void setPartition(int partition) {
         this.partition = partition;
     }
 
+    public KafkaConsumer getConsumer() {
+        return consumer;
+    }
+
+    public void setConsumer(KafkaConsumer consumer) {
+        this.consumer = consumer;
+    }
 }
